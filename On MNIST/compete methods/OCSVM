@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Oct  9 15:14:09 2018
+
+@author: FJA
+"""
+
+from sklearn.cluster import KMeans
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import input_data as input_data
+import copy
+from sklearn.metrics import roc_curve
+from sklearn.metrics import auc
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF,DotProduct, WhiteKernel,ExpSineSquared,RationalQuadratic
+from sklearn.gaussian_process import GaussianProcessRegressor
+from keras.datasets import mnist
+from sklearn import svm
+
+
+def read_mnist():
+  (x_train, y_train), (x_test, y_test) = mnist.load_data()
+  
+  # image_size = x_train.shape[1]
+  # original_dim = image_size * image_size
+  x_train = np.reshape(x_train, [-1, 28,28,1])
+  x_test = np.reshape(x_test, [-1, 28,28,1])
+  x_train = x_train.astype('float32') / 255
+  x_test = x_test.astype('float32') / 255
+  
+  # test_data = (x_test, y_test)
+  print(x_train.shape, 'reshaped x_train shape')
+  print(x_test.shape, 'reshaped x_test shape')
+  
+  data = []
+  for i in range(10):
+      data.append(x_train[y_train == i])
+      print('class{}'.format(i), data[i].shape)
+  data = np.array(data)
+  tdata = []
+  for i in range(10):
+      tdata.append(x_test[y_test == i])
+      print('class{}'.format(i), tdata[i].shape)
+  tdata = np.array(tdata)
+  
+  return (data, tdata)
+
+def performance(label,label_pred,num): 
+  FP,TP,TN,FN = 0,0,0,0
+  for i in range(np.size(label)):
+    if label_pred[i]==-1:
+      if label[i] == num:
+        FP += 1
+      else:
+        TP += 1
+    else:
+      if label[i] == num:
+        TN += 1
+      else:
+        FN += 1
+  TPR = TP/(TP+FN)
+  TNR = FP/(FP+TN)
+  F1  = 2*TP/(2*TP+FP+FN)
+  #print(F1)
+  return TPR,TNR,F1
+
+if __name__ == '__main__':
+  inlier_num = 6
+  outlier_ratio = 0.3
+  nomal = inlier_num
+  data, tdata = read_mnist()
+  anormal = list(range(10))
+  anormal.remove(nomal)
+  
+  aa = data[nomal]
+  o_num = (aa.shape[0]/(1-outlier_ratio)-aa.shape[0])/9  
+  #cut = np.shape(aa)[0]
+  label = nomal*np.ones((np.shape(aa)[0],1))
+  for i in anormal:
+    _ = data[i]
+    index = np.random.choice(np.shape(_)[0],np.int(o_num))
+    aa = np.vstack((aa,_[index]))
+    label = np.vstack((label,i*np.ones((np.int(o_num),1))))
+  data = aa
+  
+  tt = tdata[nomal]
+  o_num = (tt.shape[0]/(1-outlier_ratio)-tt.shape[0])/9  
+  #cut = np.shape(aa)[0]
+  tlabel = nomal*np.ones((np.shape(tt)[0],1))
+  for i in anormal:
+    _ = tdata[i]
+    index = np.random.choice(np.shape(_)[0],np.int(o_num))
+    tt = np.vstack((tt,_[index]))
+    tlabel = np.vstack((tlabel,i*np.ones((np.int(o_num),1))))
+  tdata = tt
+  
+  tdata = np.reshape(tdata,(-1,784))
+  data = np.reshape(data,(-1,784))
+  a=[]
+  f=[]
+  for mu in [0.01,0.1]:
+    for gama in [2**(-10),2**(-9),2**(-8),2**(-7),2**(-6),2**(-5),2**(-4),2**(-3),2**(-2),2**(-1)]:
+      clf = svm.OneClassSVM(nu=mu, kernel="rbf", gamma=gama)
+      clf.fit(data)
+      label_pred = clf.predict(data)
+      TPR,TNR,F1 = performance(label,label_pred,nomal)
+      f.append(F1)
+      score = -clf.decision_function(data)
+      fpr, tpr, thresholds = roc_curve(np.reshape(label,[np.shape(data)[0],1]), score, pos_label=inlier_num)
+      a.append(1-auc(fpr, tpr))
+  index = np.argmax(a)
+  print(index)
+  print(a[index])
+  print(f[index])
+  
